@@ -1,0 +1,542 @@
+--- uploaded/index.html
++++ updated/index.html
+@@ -2,7 +2,7 @@
+ <head>
+     <title>George Eliot Chronology</title>
+ 
+-    <script src="//code.jquery.com/jquery-1.10.2.js"></script>
++    <script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+ 	
+     <link href="bootstrap.css" rel="stylesheet" /> 
+     <script type="text/javascript" src="bootstrap.min.js"></script> 
+@@ -43,7 +43,7 @@
+ <section id="citation-results" aria-live="polite" style="background:white;color:black;margin:16px;padding:12px;max-height:240px;overflow:auto">Search or click a colored date to view source links.</section>
+ <div class="calender-map"></div>
+ <!-- ADDED: configurable destinations and citation helpers, loaded before the calendar. -->
+-<script src="citation-config.js"></script>
+-<script src="citation-links.js"></script>
+-<script type="text/javascript" src="calendermap.js"></script>
++<script src="citation-config.js?build=letter-titles-5"></script>
++<script src="citation-links.js?build=letter-titles-5"></script>
++<script type="text/javascript" src="calendermap.js?build=letter-titles-5"></script>
+ </body></html>--- uploaded/calendermap.js
++++ updated/calendermap.js
+@@ -68,7 +68,9 @@
+     .attr("id", function(d,i){ return month[i] })
+     .attr("d", monthPath);
+ 
+-d3.csv("data.csv", function(error, csv) {
++d3.csv("data.csv?build=letter-titles-5", function(error, csv) {
++
++  if (error) { document.getElementById('citation-results').textContent = 'Could not load data.csv. Start the local server and refresh.'; return; }
+ 
+   // ADDED: allow date selection to show citations without changing calendar drawing.
+   attachCitationDates(csv);
+@@ -125,7 +127,8 @@
+   var inputVal = document.getElementById("myInput").value;
+   var myArray = inputVal.split(" ");
+   //changes color of square in calendar
+-  d3.csv("Events_date_weekday.csv", function(error, csv) {
++  d3.csv("Events_date_weekday.csv?build=letter-titles-5", function(error, csv) {
++    if (error) { document.getElementById("citation-results").textContent = "Could not load search data."; return; }
+     csv.forEach(function(d) { //d has Date,Year,Month,Day,Weekday,Event
+       d.Color = "#623216";
+       let words = inputVal.split(" ");
+--- uploaded/citation-links.js
++++ updated/citation-links.js
+@@ -22,7 +22,10 @@
+     try { return typeof e.url === 'string' && /^https?:$/.test(new URL(e.url).protocol); }
+     catch (err) { return false; }
+   });
+-  if (entries.length) return entries.map(function(e) { return {url:e.url, label:e.label ? String(e.label) : '', demo:false}; });
++  if (typeof CITATION_REQUIRE_DATE === 'undefined' || CITATION_REQUIRE_DATE) {
++    entries = entries.filter(function(e) { return e.letterDate === row.Date && e.eventDate === row.Date && /^\d{4}-\d{2}-\d{2}$/.test(row.Date); });
++  }
++  if (entries.length) return entries.map(function(e) { return {url:e.url, label:e.label ? String(e.label) : '', source:e.source || '', method:e.method || '', letterDate:e.letterDate || '', demo:false}; });
+   // ADDED: this local placeholder is explicitly marked and contains no purported letter.
+   return CITATION_DEMO_MODE ? [{url:'citation-demo.html?citation=' + encodeURIComponent(citation), label:'', demo:true}] : [];
+ }
+@@ -48,10 +51,10 @@
+       if (i) parent.appendChild(document.createTextNode(' / '));
+       var a = document.createElement('a');
+       // ADDED: when several letters share one date, label each so the reader can tell them apart.
+-      var shown = i ? (link.label || 'Source ' + (i + 1)) : (links.length > 1 && link.label ? match[0] + ' \u2013 ' + link.label : match[0]);
+-      a.textContent = shown + (link.demo ? ' [demo]' : '');
++      var shown = link.label || (link.demo ? match[0] : 'Open letter');
++      a.textContent = shown + (link.source === 'cross' ? ' (Cross)' : '') + (link.demo ? ' [demo]' : '');
+       a.href = link.url;
+-      if (link.label) a.title = 'Open: ' + link.label;
++      a.title = match[0] + (link.letterDate ? ' | Letter date: ' + link.letterDate : '') + ' | ' + (link.method || 'Open source');
+       a.onclick = function() { return openCitation(link.url); };
+       // ADDED: open separately; browser preferences determine tab versus window.
+       a.target = '_blank'; a.rel = 'noopener noreferrer';
+@@ -60,6 +63,26 @@
+     start = pattern.lastIndex;
+   }
+   parent.appendChild(document.createTextNode(text.slice(start)));
++}
++
++// Row-level sources and verified alternate editions have no invented citation association.
++function appendRowSources(parent, row) {
++  var entries;
++  try { entries = JSON.parse(row.RowSourceLinks || '[]'); } catch (e) { return; }
++  if (!Array.isArray(entries)) return;
++  var seen = {};
++  entries.forEach(function(link) {
++    if (!link || typeof link.url !== 'string' || seen[link.url]) return;
++    if ((typeof CITATION_REQUIRE_DATE === 'undefined' || CITATION_REQUIRE_DATE) && (link.letterDate !== row.Date || link.eventDate !== row.Date || !/^\d{4}-\d{2}-\d{2}$/.test(row.Date))) return;
++    try { if (!/^https?:$/.test(new URL(link.url).protocol)) return; } catch (e) { return; }
++    seen[link.url] = true;
++    var a = document.createElement('a');
++    a.textContent = (link.label || 'Open letter') + (link.source === 'cross' ? ' (Cross)' : '');
++    a.href = link.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
++    a.title = link.method || 'Supplied source';
++    a.onclick = function() { return openCitation(link.url); };
++    parent.appendChild(document.createTextNode(' | ')); parent.appendChild(a);
++  });
+ }
+ 
+ // ADDED: the panel supplements the original search coloring and hover tooltips.
+@@ -76,7 +99,7 @@
+   rows.forEach(function(row) {
+     var p = document.createElement('p');
+     var date = document.createElement('strong'); date.textContent = row.Date + ': ';
+-    p.appendChild(date); appendCitationText(p, row); panel.appendChild(p);
++    p.appendChild(date); appendCitationText(p, row); appendRowSources(p, row); panel.appendChild(p);
+   });
+ }
+ 
+--- uploaded/citation-config.js
++++ updated/citation-config.js
+@@ -7,10 +7,13 @@
+ //   'tab'    = ordinary new browser tab
+ var CITATION_OPEN_MODE = 'window';
+ // ADDED: 'citation-source' reuses one popup for every click; use '_blank' for a fresh window each time.
+-var CITATION_WINDOW_NAME = 'citation-source';
++var CITATION_WINDOW_NAME = '_blank';
+ var CITATION_WINDOW_FEATURES = 'popup=yes,width=1000,height=800,scrollbars=yes,resizable=yes';
+ 
+ // ADDED: optional manual overrides for individual citations (a row's SourceLinks in the CSV wins over these).
+ // Shape: "letters1:23": ["https://verified-url"]  or  [{"url": "https://...", "label": "text"}]
+ // Most links now come from data.csv; regenerate them with:  python3 build_citation_data.py
+ var CITATION_URLS = {};
++
++// Block legacy links lacking matching event and letter dates.
++var CITATION_REQUIRE_DATE = true;
+--- uploaded/build_citation_data.py
++++ updated/build_citation_data.py
+@@ -1,147 +1,208 @@
+-#!/usr/bin/env python3
+-"""Build the calendar's data files with live source links.
+-
+-Reads the matched chronology + Cross Letters CSVs in ./source_data and writes
+-data.csv and Events_date_weekday.csv (Date,Year,Month,Day,Weekday,Event,SourceLinks).
+-
+-SourceLinks is a JSON object per row:
+-    {"cross3:385": [{"url": "...", "label": "..."}], "letters2:19": [...]}
+-Keys use the same normalisation as citationKey() in citation-links.js.
+-
+-Re-run this script whenever the source CSVs are updated ("data is ready").
+-    python3 build_citation_data.py
++"""Build calendar links from the four current sources. Run: py build_citation_data.py.
++Exact dates select candidates; quotation/content evidence selects a unique letter.
++Supplied URLs and volume/page ranges are not evidence of a match.
+ """
+-import csv, json, re, sys
+-from collections import defaultdict
++import csv, json, re, html, zipfile
++from collections import defaultdict, Counter
+ from pathlib import Path
+-
+-HERE = Path(__file__).parent
+-SRC = HERE / "source_data"
+-CHRONOLOGY = SRC / "Chronology_with_Complete_Letters_URI.csv"
+-CROSS = SRC / "CrossLetters_with_Complete_Letters_matches.csv"
+-OUT_COLUMNS = ["Date", "Year", "Month", "Day", "Weekday", "Event", "SourceLinks"]
+-
+-# Must stay identical to the pattern in citation-links.js
+-CITATION = re.compile(r"\b(?:Letters|Cross)\s+\d+\s*:\s*\d+(?:\s*[-–—]\s*\d+)?", re.I)
+-
++from urllib.parse import urlparse
++from xml.etree import ElementTree as ET
++HERE = Path(__file__).resolve().parent
++SOURCE = HERE / 'source_data'
++CITATION = re.compile(r'\b(?:Letters|Cross)\s+\d+\s*:\s*\d+(?:\s*[-–—]\s*\d+)?', re.I)
+ 
+ def key(text):
+-    """Python twin of citationKey() in citation-links.js."""
+-    return re.sub(r"[–—]", "-", re.sub(r"\s+", "", text.lower()))
+-
+-
+-def parse_ref(text):
+-    """'Cross 1: 233-4' -> ('cross', 1, 233, 234). Abbreviated end pages are expanded."""
+-    m = re.match(r"(letters|cross)\s*(\d+)\s*:\s*(\d+)(?:\s*[-–—]\s*(\d+))?", text.strip(), re.I)
+-    src, vol, start = m.group(1).lower(), int(m.group(2)), int(m.group(3))
+-    end = m.group(4)
+-    if end is None:
+-        return src, vol, start, start
+-    if int(end) < start:  # "233-4" means 233-234
+-        end = str(start)[: len(str(start)) - len(end)] + end
+-    return src, vol, start, int(end)
+-
+-
+-def clean(html):
+-    return re.sub(r"<[^>]+>", "", html or "").strip()
+-
+-
+-def load(path):
+-    with path.open(newline="", encoding="utf-8-sig") as f:
+-        return list(csv.DictReader(f))
+-
+-
+-def build_cross_index():
+-    """(volume, date) -> [(url, title, correspondent)] from the Cross Letters export.
+-
+-    NOTE: Cross page numbers are deliberately NOT used for matching. The archive's
+-    "Source" pages and the chronology's "Cross v: p" pages follow different
+-    pagination (chronology pages run ~25% higher, consistently), so page matching
+-    would link to the wrong letters. Volume + letter date agree on every check.
+-    """
+-    index = defaultdict(list)
+-    for r in load(CROSS):
+-        m = re.search(r"(\d+):(\d+)(?:-\d+)?\s*$", clean(r["Dublin Core:Source"]))
+-        url = (r.get("Item URI") or "").strip()
+-        if not (m and url):
+-            continue
+-        index[(int(m.group(1)), r["Dublin Core:Date"].strip())].append(
+-            (url, clean(r["Dublin Core:Title"]), clean(r["Dublin Core:Subject"])))
+-    return index
+-
+-
+-def _words(text):
+-    return set(re.findall(r"[a-z]+", text.lower()))
+-
+-
+-def cross_links(ref, row, index):
+-    """Link a 'Cross v: p' citation to the same-volume letter dated the same day as the event."""
+-    _, vol, _, _ = ref
+-    hits = index.get((vol, row["Date"]), [])
+-    if len(hits) > 1:  # several letters that day: narrow by correspondent named in the event
+-        words = _words(row["Event"])
+-        def toks(h): return [t for t in re.findall(r"[a-z]+", h[2].lower()) if len(t) > 1]
+-        both = [h for h in hits if toks(h) and toks(h)[0] in words and toks(h)[-1] in words]
+-        last = [h for h in hits if toks(h) and toks(h)[-1] in words]
+-        hits = both or last or hits
+-    return [{"url": h[0], "label": h[1]} for h in hits], len(hits) == 1
+-
+-
+-def letters_links(citation_key, row, cross_rows_by_date):
+-    """Complete Letters URIs matched to this row by date + identifier (see match scripts)."""
+-    uris = [u.strip() for u in (row.get("Complete Letters URI") or "").split("|") if u.strip()]
+-    ids = {key("letters" + i) for i in re.split(r"[\s,;]+", row.get("Dublin Core Identitifier") or "") if i}
+-    out = []
+-    if uris and citation_key in ids:
+-        out += [{"url": u, "label": "Complete Letters"} for u in uris]
+-    for c in cross_rows_by_date.get(row["Date"], []):     # Cross rows already matched to Complete Letters
+-        if key("letters" + c["Complete Letters Core Identifier"]) == citation_key and c["New Item URI"]:
+-            out += [{"url": u.strip(), "label": "Complete Letters"} for u in c["New Item URI"].split("|") if u.strip()]
+-    seen, dedup = set(), []
+-    for o in out:
+-        if o["url"] not in seen:
+-            seen.add(o["url"]); dedup.append(o)
+-    return dedup
+-
++    return re.sub('[–—]', '-', re.sub(r'\s+', '', text.lower()))
++
++def clean(text):
++    return html.unescape(re.sub('<[^>]+>', '', str(text or ''))).strip()
++
++def urls(text):
++    result=[]
++    for value in re.split(r'[;|\s]+', str(text or '')):
++        p=urlparse(value)
++        if p.scheme in ('http','https') and p.netloc and value not in result: result.append(value)
++    return result
++
++def refs(text):
++    result=set()
++    for m in re.finditer(r'(\d+)\s*:\s*(\d+)(?:\s*[-–—]\s*(\d+))?', clean(text)):
++        v,a,b=m.groups(); a=int(a)
++        if b and int(b)<a: b=str(a)[:-len(b)]+b
++        b=int(b or a)
++        if a<=b<=a+100:
++            result.update((int(v),p) for p in range(a,b+1))
++    return result
++
++def csv_rows(name):
++    with (SOURCE/name).open(encoding='utf-8-sig',newline='') as f: return list(csv.DictReader(f))
++
++def xlsx_rows(filename):
++    """Read the first worksheet, including shared/inline strings, without pip."""
++    path = SOURCE / filename
++    if not path.exists():
++        return []
++    ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
++    with zipfile.ZipFile(path) as z:
++        strings = []
++        if 'xl/sharedStrings.xml' in z.namelist():
++            strings = [''.join(t.text or '' for t in si.iterfind('.//s:t', ns))
++                       for si in ET.fromstring(z.read('xl/sharedStrings.xml'))]
++        sheet = ET.fromstring(z.read('xl/worksheets/sheet1.xml'))
++        table = []
++        for row in sheet.findall('.//s:sheetData/s:row', ns):
++            cells = {}
++            for cell in row.findall('s:c', ns):
++                col = re.match(r'[A-Z]+', cell.attrib['r'])[0]
++                idx = 0
++                for c in col:
++                    idx = idx * 26 + ord(c) - 64
++                v = cell.find('s:v', ns)
++                value = v.text if v is not None else ''
++                if cell.get('t') == 's':
++                    value = strings[int(value)]
++                elif cell.get('t') == 'inlineStr':
++                    value = ''.join(t.text or '' for t in cell.findall('.//s:t', ns))
++                cells[idx - 1] = value or ''
++            if cells:
++                table.append(cells)
++        if not table:
++            return []
++        headers = table[0]
++        return [{key: row.get(i, '') for i, key in headers.items()} for row in table[1:]]
++
++# Conservative, transparent text rules. These scores are not probabilities.
++STOP=set('the and that this with from have been were their they them which when what would could should shall will your yours dear very much more some into about than then there these those such only also does did had has was are for not but you she her his him our out all may can who how its yet one two any letter writes write tells sends sent says said george eliot evans letters cross'.split())
++
++def words(s):
++    import unicodedata
++    s=unicodedata.normalize('NFKD',clean(s)).encode('ascii','ignore').decode().lower()
++    return re.findall(r'[a-z]+',s)
++
++def normalize(s): return ' '.join(words(s))
++
++def exact_date(value):
++    from datetime import date
++    value=str(value or '').strip()
++    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}',value): return None
++    try:return date.fromisoformat(value).isoformat()
++    except ValueError:return None
++
++def prepare_records(records):
++    freq=Counter()
++    for r in records:
++        # Body only: exclude the first title line and bibliographic fields/footnotes.
++        description=clean(r.get('Dublin Core:Description',''))
++        lines=description.splitlines()
++        if lines and normalize(lines[0])==normalize(r.get('Dublin Core:Title','')): lines=lines[1:]
++        body='\n'.join(lines)+'\n'+clean(r.get('Item Type Metadata:Text',''))+'\n'+clean(r.get('Item Type Metadata:Transcription',''))
++        r['_body']=normalize(body)
++        r['_tokens']=set(words(body))-STOP
++        freq.update(r['_tokens'])
++    return freq
++
++def evidence(event,r,freq):
++    text=CITATION.sub('',event)
++    # Apostrophes inside words are not quote delimiters; ellipses split quote pieces.
++    quotes=re.findall(r'(?<!\w)[\'\u2018\u201c\"](.+?)[\'\u2019\u201d\"](?!\w)',text)
++    phrases=[]
++    for q in quotes:
++        for piece in re.split(r'(?:\.\s*){3,}|…',q):
++            tokens=words(piece)
++            if len(tokens)>=6 and len(set(tokens)-STOP)>=2:
++                phrase=' '.join(tokens)
++                if ' '+phrase+' ' in ' '+r['_body']+' ': phrases.append(phrase)
++    people=clean(r.get('Dublin Core:Subject','')).split('^^')[0]
++    name=[w for w in words(people) if w not in {'mrs','mr','miss','dr','sir','lady','george','eliot'}]
++    event_tokens=set(words(text))
++    person=len(name)>=2 and name[-1] in event_tokens and sum(w in event_tokens for w in name)>=2
++    specific={w for w in event_tokens-STOP-set(name) if len(w)>=4 and freq[w]<=200}
++    shared=sorted(specific & r['_tokens'])
++    coverage=len(shared)/max(1,len(specific))
++    if phrases:
++        return {'accepted':True,'reason':'exact date and quotation','quote':max(phrases,key=len),'terms':shared}
++    if person and len(shared)>=4 and coverage>=0.6:
++        return {'accepted':True,'reason':'exact date, named recipient and content overlap','quote':'','terms':shared}
++    return {'accepted':False,'reason':'insufficient quotation or recipient/content evidence','quote':'','terms':shared}
++
++def choose(event,candidates,freq):
++    scored=[(r,evidence(event,r,freq)) for r in candidates]
++    good=[(r,e) for r,e in scored if e['accepted']]
++    # Never pick a winner just because it has the highest score among weak matches.
++    if len(good)==1:return good[0],scored
++    return None,scored
++
++def source_indexes(complete, cross):
++    """Separate archive editions, both gated by exact event dates and content."""
++    freq=prepare_records(complete)
++    by_url={r['Item URI'].strip():r for r in complete}
++    indexes={'letters':defaultdict(list),'cross':defaultdict(list)}
++    for r in complete:
++        d=exact_date(r.get('Dublin Core:Date'))
++        if d and urls(r.get('Item URI')):indexes['letters'][d].append(r)
++    for row in cross:
++        if row.get('Verification_Status','').strip().lower() not in {'verified','verified with note','firm match'}:continue
++        targets=urls(row.get('Complete_Item_URI'))
++        if len(targets)!=1:continue
++        target=by_url.get(targets[0]);d=exact_date(row.get('Dublin Core:Date'))
++        if not target or not d or d!=exact_date(target.get('Dublin Core:Date')) or not urls(row.get('Item URI')):continue
++        r=dict(row)
++        # Cross metadata has no body. Its reviewed edition match supplies the content.
++        r['_body']=target['_body'];r['_tokens']=target['_tokens']
++        r['_content_url']=targets[0]
++        indexes['cross'][d].append(r)
++    return indexes,freq
++
++def match_source(row,citation,kind,indexes,freq,require_reference=False):
++    candidates=indexes[kind].get(exact_date(row['Date']),[])
++    if require_reference:
++        field='Dublin Core:Identifier' if kind=='letters' else 'Dublin Core:Relation'
++        candidates=[r for r in candidates if refs(citation)&refs(r.get(field,''))]
++    return choose(row['Event'],candidates,freq),candidates
+ 
+ def main():
+-    cross_index = build_cross_index()
+-    cross_matched = defaultdict(list)
+-    for r in load(CROSS):
+-        if r["Matched"] == "True" and r["New Item URI"].strip():
+-            cross_matched[r["Dublin Core:Date"].strip()].append(r)
+-
+-    rows = load(CHRONOLOGY)
+-    stats = defaultdict(int)
+-    out_rows = []
+-    for r in rows:
+-        links = {}
+-        for m in CITATION.finditer(r["Event"]):
+-            k = key(m.group(0))
+-            stats["citations"] += 1
+-            if k in links:
+-                continue
+-            if k.startswith("cross"):
+-                found, exact = cross_links(parse_ref(m.group(0)), r, cross_index)
+-                stats["cross_linked" if found else "cross_unlinked"] += 1
+-                stats["cross_single_letter"] += exact
+-            else:
+-                found = letters_links(k, r, cross_matched)
+-                stats["letters_linked" if found else "letters_unlinked"] += 1
+-            if found:
+-                links[k] = found
+-        out = {c: r[c] for c in OUT_COLUMNS[:-1]}
+-        out["SourceLinks"] = json.dumps(links, ensure_ascii=False) if links else ""
+-        out_rows.append(out)
+-
+-    for name in ("data.csv", "Events_date_weekday.csv"):
+-        with (HERE / name).open("w", newline="", encoding="utf-8") as f:
+-            w = csv.DictWriter(f, fieldnames=OUT_COLUMNS)
+-            w.writeheader(); w.writerows(out_rows)
+-    print(f"Wrote data.csv and Events_date_weekday.csv ({len(out_rows)} rows)")
+-    for k in sorted(stats):
+-        print(f"  {k}: {stats[k]}")
+-
+-
+-if __name__ == "__main__":
+-    main()
++    chronology=csv_rows('Chronology_with_Cross_URI_updated.csv')
++    complete=csv_rows('Complete_Letters_Matched.csv')
++    cross=xlsx_rows('CrossLetters_Verified_updated final edit JB.xlsx')
++    indexes,freq=source_indexes(complete,cross)
++    output=[];audit=[];removed=[];stats=Counter()
++    for num,row in enumerate(chronology,2):
++        citations=list(dict.fromkeys(m.group() for m in CITATION.finditer(row['Event'])))
++        mapping={};extra=[];selected_urls=set();families=set()
++        jobs=[(c,'cross' if c.lower().startswith('cross') else 'letters') for c in citations]
++        if not jobs:jobs=[('', 'letters')]
++        for citation,kind in jobs:
++            multiple=sum(k==kind for _,k in jobs)>1
++            (selected,scored),candidates=match_source(row,citation,kind,indexes,freq,multiple)
++            if selected:
++                r,e=selected;u=r['Item URI'].strip()
++                link={'url':u,'label':clean(r['Dublin Core:Title']),'source':kind,
++                      'method':e['reason'],'letterDate':r['Dublin Core:Date'].strip(),'eventDate':row['Date']}
++                if kind=='cross':link['contentSourceURL']=r['_content_url']
++                if citation:mapping[key(citation)]=[link]
++                else:extra.append(link)
++                selected_urls.add(u);families.add(kind);stats[kind+'_references_linked']+=1
++            else:stats[kind+'_references_unlinked']+=1
++            if not scored:
++                audit.append({'row':num,'date':row['Date'],'citation':citation,'source':kind,'event':row['Event'],'status':'review','candidate_url':'','candidate_title':'','content_source_url':'','evidence':'No eligible exact-date candidate or citation-specific mapping','quotation':'','shared_terms':''})
++            for r,e in scored:
++                accepted=bool(selected and selected[0] is r)
++                audit.append({'row':num,'date':row['Date'],'citation':citation,'source':kind,'event':row['Event'],'status':'matched' if accepted else 'review','candidate_url':r['Item URI'],'candidate_title':clean(r['Dublin Core:Title']),'content_source_url':r.get('_content_url',r['Item URI']),'evidence':e['reason'] if accepted or not e['accepted'] else 'multiple supported candidates; review required','quotation':e['quote'],'shared_terms':'; '.join(e['terms'])})
++        stats['rows_with_links']+=bool(selected_urls)
++        stats['rows_with_both_editions']+=families=={'letters','cross'}
++        old=set(urls(row.get('Complete Letters URI'))+urls(row.get('Cross Letters URI')))
++        for u in sorted(old-selected_urls):removed.append({'row':num,'date':row['Date'],'removed_url':u,'reason':'Not a supported destination for the requested source edition'})
++        out={k:row.get(k,'') for k in ['Date','Year','Month','Day','Weekday','Event']}
++        out['SourceLinks']=json.dumps(mapping,ensure_ascii=False) if mapping else ''
++        out['RowSourceLinks']=json.dumps(extra,ensure_ascii=False) if extra else ''
++        output.append(out)
++    for name in ['data.csv','Events_date_weekday.csv']:
++        with (HERE/name).open('w',encoding='utf-8',newline='') as f:
++            w=csv.DictWriter(f,fieldnames=list(output[0]));w.writeheader();w.writerows(output)
++    for name,rows,fields in [('match_audit.csv',audit,['row','date','citation','source','event','status','candidate_url','candidate_title','content_source_url','evidence','quotation','shared_terms']),('removed_links.csv',removed,['row','date','removed_url','reason'])]:
++        with (HERE/name).open('w',encoding='utf-8',newline='') as f:
++            w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
++    report={'source_rows':len(chronology),'complete_letters':len(complete),'cross_rows':len(cross),**stats,'policy':'Date then content, separately for Letters and Cross. Titles replace matched citation numbers. Cross content comes from its verified same-date complete-letter match.'}
++    (HERE/'data_report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
++    print(json.dumps(report,indent=2))
++if __name__=='__main__':main()
+--- uploaded/test-citations.cjs
++++ updated/test-citations.cjs
+@@ -10,9 +10,10 @@
+ const rows = [{Date:'1850-01-01',Event:'Letters 1: 23; Cross 2: 45'}, {Date:'1850-01-02',Event:'Unrelated event'}];
+ const rect = {filter() { return this; },attr() { return this; }};
+ const ctx = {URL, console, rect, document:{getElementById(id){return id==='myInput'?input:panel;}, createElement(t){return new Element(t);}, createTextNode(t){const e=new Element('text');e.textContent=t;return e;}}};
+-ctx.d3 = {csv(name,cb){assert.equal(name,'Events_date_weekday.csv');cb(null,rows);},max(){return 0;},nest(){return {key(){return this;},rollup(){return this;},map(){return {};}};}};
++ctx.d3 = {csv(name,cb){assert.equal(name.split('?')[0],'Events_date_weekday.csv');cb(null,rows);},max(){return 0;},nest(){return {key(){return this;},rollup(){return this;},map(){return {};}};}};
+ vm.createContext(ctx);
+ for(const n of ['citation-config.js','citation-links.js']) vm.runInContext(fs.readFileSync(__dirname+'/'+n,'utf8'),ctx);
++ctx.CITATION_REQUIRE_DATE=false; // Legacy unit fixtures below deliberately omit date metadata.
+ function render(text,row={}) {const el=new Element('p');ctx.appendCitationText(el,{Event:text,...row});return el;}
+ function links(el){return el.children.filter(c=>c.tag==='a');}
+ ctx.CITATION_DEMO_MODE=true;
+@@ -39,10 +40,10 @@
+ ctx.CITATION_URLS={};
+ let el=render('See Cross 3: 237.',{SourceLinks:JSON.stringify({'cross3:237':[{url:'https://georgeeliotarchive.org/items/show/1',label:'GE to A, 1874-07-01'},{url:'https://georgeeliotarchive.org/items/show/2',label:'GE to B, 1874-07-01'}]})});
+ assert.equal(links(el).length,2);
+-assert.equal(links(el)[0].textContent,'Cross 3: 237 \u2013 GE to A, 1874-07-01');
++assert.equal(links(el)[0].textContent,'GE to A, 1874-07-01');
+ assert.equal(links(el)[1].textContent,'GE to B, 1874-07-01');
+ el=render('Cross 1: 52-3',{SourceLinks:JSON.stringify({'cross1:52-3':[{url:'https://georgeeliotarchive.org/items/show/622',label:'GE to Maria Lewis, 1839-03-16'}]})});
+-assert.equal(links(el)[0].textContent,'Cross 1: 52-3');
++assert.equal(links(el)[0].textContent,'GE to Maria Lewis, 1839-03-16');
+ assert.equal(links(el)[0].href,'https://georgeeliotarchive.org/items/show/622');
+ // NEW: unmapped citations stay plain text with demo off; unsafe object URLs rejected
+ ctx.CITATION_DEMO_MODE=false;
+@@ -60,3 +61,37 @@
+ ctx.CITATION_OPEN_MODE='tab';
+ assert.equal(links(el)[0].onclick(),true);
+ console.log('PASS: demo/live resolution, multiple/repeated links, new-tab attributes, unsafe URL rejection, dynamic mappings, literal text, original search matching/colors and no results.');
++// Row-level links are safe and deduplicated; candidate matches are explicit.
++let rowEl=new Element('p');
++ctx.appendRowSources(rowEl,{RowSourceLinks:JSON.stringify([{url:'https://example.org/a',label:'Stuart edition'},{url:'https://example.org/a'},{url:'javascript:alert(1)'}])});
++assert.equal(links(rowEl).length,1);
++assert.equal(links(rowEl)[0].target,'_blank');
++assert.equal(links(rowEl)[0].rel,'noopener noreferrer');
++el=render('Letters 1: 23',{SourceLinks:JSON.stringify({'letters1:23':[{url:'https://example.org/a',method:'volume/page candidate'}]})});
++assert.equal(links(el)[0].textContent,'Open letter');
++console.log('PASS: row-level sources, deduplication, unsafe URL rejection and candidate labels.');
++
++ctx.CITATION_REQUIRE_DATE=true;
++ctx.CITATION_DEMO_MODE=false;
++ctx.CITATION_URLS={};
++assert.equal(links(render('Letters 2: 424',{Date:'1866-02-12',SourceLinks:JSON.stringify({'letters2:424':[{url:'https://example.org/wrong',letterDate:'1858-01-21',eventDate:'1866-02-12'}]})})).length,0);
++assert.equal(links(render('Letters 2: 424',{Date:'1866-02-12',SourceLinks:JSON.stringify({'letters2:424':[{url:'https://example.org/old'}]})})).length,0);
++assert.equal(links(render('Letters 2: 424',{Date:'1866-02-12',SourceLinks:JSON.stringify({'letters2:424':[{url:'https://example.org/right',letterDate:'1866-02-12',eventDate:'1866-02-12'}]})})).length,1);
++let guarded=new Element('p');
++ctx.appendRowSources(guarded,{Date:'1866-02-12',RowSourceLinks:JSON.stringify([{url:'https://example.org/wrong',letterDate:'1858-01-21',eventDate:'1866-02-12'}])});
++assert.equal(links(guarded).length,0);
++console.log('PASS: browser date guard rejects wrong-date and stale metadata links.');
++
++// Both source families render titles while retaining their own destinations.
++const eventRow={Date:'1846-02-14',SourceLinks:JSON.stringify({
++ 'letters1:206':[{url:'https://georgeeliotarchive.org/items/show/95555',label:'Caroline Bray to Sara Hennell',source:'letters',letterDate:'1846-02-14',eventDate:'1846-02-14'}],
++ 'cross1:139':[{url:'https://georgeeliotarchive.org/items/show/685',label:'Cara Hennell Bray to Sara Hennell',source:'cross',letterDate:'1846-02-14',eventDate:'1846-02-14'}]
++})};
++el=render('Example (Letters 1: 206; Cross 1: 139).',eventRow);
++assert.equal(links(el).length,2);
++assert.equal(links(el)[0].textContent,'Caroline Bray to Sara Hennell');
++assert.equal(links(el)[1].textContent,'Cara Hennell Bray to Sara Hennell (Cross)');
++assert.match(links(el)[0].href,/95555$/);assert.match(links(el)[1].href,/685$/);
++assert.ok(!el.textContent.includes('1: 206'));assert.ok(!el.textContent.includes('1: 139'));
++assert.match(links(el)[0].title,/Letters 1: 206/);
++console.log('PASS: title labels, separate Letters/Cross URLs and both links per event.');

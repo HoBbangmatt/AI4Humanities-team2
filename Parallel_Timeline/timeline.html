@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>George Eliot Archive Parallel Timeline</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+  <script src="vendor/d3.v7.min.js" defer></script>
+  <script src="timeline.js" defer></script>
+</head>
+<body>
+<main>
+<h1>George Eliot Archive Parallel Timeline</h1>
+  <section class="control-card" aria-label="Search and explore by work">
+  <div class="toolbar" aria-label="Timeline controls">
+    <label class="search-label">Search the archive<input id="search" type="search" placeholder="A name, a book, a phrase…" autocomplete="off"></label>
+    <label>From<input id="from" type="date"></label>
+    <label>To<input id="to" type="date"></label>
+    <button id="apply">Apply dates</button><button id="reset" class="secondary">Reset</button>
+  </div>
+  <div class="work-controls">
+    <h2>Explore by Work</h2>
+    <div id="work-buttons" class="work-buttons" aria-label="Filter by literary work"></div>
+    <label><input id="same-period" type="checkbox" disabled> Include same-period records</label>
+    <p id="work-note">Choose a work to find mentions across all three tracks.</p>
+    <p id="work-summary" role="status" aria-live="polite"></p>
+  </div>
+  </section>
+  <section class="pilot-controls" aria-label="Semantic similarity pilot">
+    <h2>Suggested connections: 1869 pilot</h2>
+    <p>Exploratory similarities, not verified historical relationships. Select an event to inspect its ranked candidates.</p>
+    <label for="pilot-event">Pilot event</label>
+    <select id="pilot-event"><option value="">Choose one of 18 life events</option></select>
+    <button id="open-pilot" type="button">View event and suggestions</button>
+    <p id="pilot-status" role="status"></p>
+  </section>
+  <div class="filter-row">
+    <fieldset class="tracks"><legend class="sr-only">Visible tracks</legend>
+      <label class="life"><input type="checkbox" name="track" value="life" checked>Life Events</label>
+      <label class="reading"><input type="checkbox" name="track" value="reading" checked>Reading</label>
+      <label class="letters"><input type="checkbox" name="track" value="letters" checked>Letters</label>
+    </fieldset>
+    <p id="status" role="status" aria-live="polite">Loading source records…</p>
+  </div>
+  <div id="error" role="alert" hidden></div>
+  <section class="workspace">
+    <div class="chart-column">
+      <div class="chart-heading"><div><p class="eyebrow">SHARED TIME AXIS</p><h2 id="range-label">Loading…</h2></div>
+        <div class="navigation" aria-label="Zoom and pan"><button id="pan-left" title="Earlier period" aria-label="Earlier period">← Earlier</button><button id="zoom-in" title="Zoom in" aria-label="Zoom in">+ Zoom in</button><button id="zoom-out" title="Zoom out" aria-label="Zoom out">− Zoom out</button><button id="pan-right" title="Later period" aria-label="Later period">Later →</button><button id="reset-view">↺ Reset view</button></div>
+      </div>
+      <div id="timeline" aria-label="Three-track timeline"></div>
+    </div>
+    <aside id="details" aria-label="Selected record details" tabindex="-1">
+      <p class="eyebrow">RECORD DETAILS</p><h2>Follow a thread</h2><p>Select a record to read its evidence and open its source.</p>
+      <div class="empty-detail"><span>01</span><p>Choose a period on the timeline.</p><span>02</span><p>Compare the three tracks.</p><span>03</span><p>Open a record and follow its source.</p></div>
+      <p class="detail-note">Records in the same period provide context. Temporal proximity does not establish a causal connection.</p>
+    </aside>
+  </section>
+</main>
+<noscript>This visualization requires JavaScript.</noscript>
+</body></html>
